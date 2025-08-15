@@ -1,0 +1,21 @@
+X-Remove [a] and other letters for citations from wiki copying (from fiction pulitzer list mainly)
+X-Separate author and title (author, title) from pulitzer fiction Author finalist rows
+Add genres?
+X-Fill in years for finalists (fill down) 
+X-Fill in winner or finalist for pulitzer nonfiction (if year winner if no year finalist)
+
+Ideas:
+X-Add goodreads ratings? Both mine and public (for public also add number of reviews)
+X-Add genres and year published from google books API
+X-Add read toggle (if ive read it)?
+Import TBR from goodreads? And have it list awards?
+
+Fix:
+X-Book club years are all 2025?
+X-Make it so authors that have won nobel prizes get that accolade on titles with that author.
+X-Add count for number of books read/rated to all books section
+
+Connect GitHub repo to python/R for public streamlite app access
+
+streamlit run book_awards_app.py
+python update_goodreads_ratings.py

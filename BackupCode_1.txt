@@ -339,11 +339,7 @@ elif choice == "Search Accolades":
     )
 
     st.write(f"**Books displayed:** {len(display_table_unique)}")
-    
-    st.dataframe(
-    display_table_unique[["Title", "Author", "Year", "Category", "Result"]],
-    use_container_width=True
-)
+    st.dataframe(display_table_unique[["Title", "Author", "Year", "Category", "Result"]])
 
 else:  # All Books view
     st.subheader("Your Read Books")
@@ -444,15 +440,16 @@ else:  # All Books view
     )
 )
         
-if choice == "Your Books" and 'line' in locals():
-    tab1, tab2 = st.tabs(["Your Ratings vs Goodreads Avg", "Top Accolades by Avg Rating"])
-    with tab1:
-        st.altair_chart(line + chart1, use_container_width=True)
-    with tab2:
-        if not acc_ratings.empty:
-            st.altair_chart(chart2, use_container_width=True)
-        else:
-            st.warning("No book accolades have associated Goodreads ratings to display in this chart.")
+tab1, tab2 = st.tabs(["Your Ratings vs Goodreads Avg", "Top Accolades by Avg Rating"])
+
+with tab1:
+    st.altair_chart(line + chart1, use_container_width=True)
+
+with tab2:
+    if not acc_ratings.empty:
+        st.altair_chart(chart2, use_container_width=True)
+    else:
+        st.warning("No book accolades have associated Goodreads ratings to display in this chart.")
 
     # ---------------- Optional: Show all books with accolades ----------------
     if st.checkbox("Show all books with accolades"):
@@ -465,8 +462,7 @@ if choice == "Your Books" and 'line' in locals():
             .rename(columns={"Total_Accolades": "Accolade Count"})
         )
         st.write(f"**Books displayed:** {len(all_agg)}")
-        with st.container():
-            st.dataframe(all_agg[["Title", "Author", "Accolade Count"]], use_container_width=True)
+        st.dataframe(all_agg[["Title", "Author", "Accolade Count"]])
 
 # Editable table for base_df (book list with accolades)
 # ---------- Editable table (Top by Accolades & Search Books only) ----------
@@ -558,15 +554,8 @@ if choice in ["Top by Accolades", "Search Books"] and base_df is not None:
 
         # Display Accolades Table
         st.markdown(f"### **{sel_title}** by {sel_author}")
-
-        book_table = accolades_rows[["Accolade", "Category", "Year", "Result"]].copy()
-
-        # Format Year without commas
-        if "Year" in book_table.columns:
-            book_table["Year"] = book_table["Year"].apply(lambda x: str(int(x)) if pd.notna(x) else "")
-
         st.dataframe(
-            book_table.sort_values("Year", ascending=False),
+            accolades_rows[["Accolade", "Category", "Year", "Result"]].sort_values("Year", ascending=False),
             use_container_width=True,
         )
 
