@@ -7,7 +7,6 @@ import streamlit as st
 import pandas as pd
 import requests
 import sqlite3
-import time
 import urllib.parse
 from urllib.parse import quote_plus
 from sqlalchemy import create_engine, text
@@ -16,6 +15,8 @@ from bs4 import BeautifulSoup
 import os
 from datetime import datetime
 import altair as alt
+from supabase import create_client, Client
+import time
 
 # ---------- CONFIG ----------
 DB_PATH = "user_books.db"      # local sqlite file to persist read status & personal ratings
@@ -24,62 +25,124 @@ GOODREADS_BOOK = "https://goodreads-unofficial.herokuapp.com/book/{book_id}"
 # Note: This is an unofficial endpoint useful for small/personal projects; may be rate-limited or go down.
 # Replace with your preferred 3rd-party API if needed.
 
-# ---------- DATABASE HELPERS ----------
-def init_db(conn):
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS user_books (
-            id INTEGER PRIMARY KEY,
-            title TEXT NOT NULL,
-            author TEXT,
-            read INTEGER DEFAULT 0,
-            rating INTEGER,            -- user's personal rating 0.5-5
-            updated_at REAL
-        )
-        """
-    )
-    conn.commit()
+# # ---------- DATABASE HELPERS (old)----------
+# def init_db(conn):
+#     conn.execute(
+#         """
+#         CREATE TABLE IF NOT EXISTS user_books (
+#             id INTEGER PRIMARY KEY,
+#             title TEXT NOT NULL,
+#             author TEXT,
+#             read INTEGER DEFAULT 0,
+#             rating INTEGER,            -- user's personal rating 0.5-5
+#             updated_at REAL
+#         )
+#         """
+#     )
+#     conn.commit()
 
-def upsert_user_book(conn, title, author, read=None, rating=None):
-    now = time.time()
-    cur = conn.cursor()
-    # Check if exists
-    cur.execute("SELECT id FROM user_books WHERE title = ? AND (author = ? OR author IS NULL OR ? IS NULL)", (title, author, author))
-    row = cur.fetchone()
-    if row:
-        # update
-        set_fields = []
-        params = []
-        if read is not None:
-            set_fields.append("read = ?")
-            params.append(1 if read else 0)
-        if rating is not None:
-            set_fields.append("rating = ?")
-            params.append(int(rating) if rating is not None and not pd.isna(rating) else None)
-        set_fields.append("updated_at = ?")
-        params.append(now)
-        params.append(title)
-        params.append(author)
-        sql = f"UPDATE user_books SET {', '.join(set_fields)} WHERE title = ? AND (author = ? OR author IS NULL OR ? IS NULL)"
-        cur.execute(sql, params)
+# def upsert_user_book(conn, title, author, read=None, rating=None):
+#     now = time.time()
+#     cur = conn.cursor()
+#     # Check if exists
+#     cur.execute("SELECT id FROM user_books WHERE title = ? AND (author = ? OR author IS NULL OR ? IS NULL)", (title, author, author))
+#     row = cur.fetchone()
+#     if row:
+#         # update
+#         set_fields = []
+#         params = []
+#         if read is not None:
+#             set_fields.append("read = ?")
+#             params.append(1 if read else 0)
+#         if rating is not None:
+#             set_fields.append("rating = ?")
+#             params.append(int(rating) if rating is not None and not pd.isna(rating) else None)
+#         set_fields.append("updated_at = ?")
+#         params.append(now)
+#         params.append(title)
+#         params.append(author)
+#         sql = f"UPDATE user_books SET {', '.join(set_fields)} WHERE title = ? AND (author = ? OR author IS NULL OR ? IS NULL)"
+#         cur.execute(sql, params)
+#     else:
+#         cur.execute(
+#             "INSERT INTO user_books (title, author, read, rating, updated_at) VALUES (?,?,?,?,?)",
+#             (title, author, 1 if read else 0 if read is not None else 0, int(rating) if rating is not None and not pd.isna(rating) else None, now),
+#         )
+#     conn.commit()
+
+# def get_user_book(conn, title, author):
+#     cur = conn.cursor()
+#     cur.execute("SELECT read, rating FROM user_books WHERE title = ? AND (author = ? OR author IS NULL OR ? IS NULL)", (title, author, author))
+#     r = cur.fetchone()
+#     if r:
+#         return {"read": bool(r[0]), "rating": int(r[1]) if r[1] is not None else None}
+#     return {"read": False, "rating": None}
+
+# def get_all_user_books(conn):
+#     df = pd.read_sql("SELECT * FROM user_books", conn)
+#     return df
+
+# ---------------- Supabase client setup ----------------
+SUPABASE_URL = "https://mbebgribdxqnltwymfpx.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1iZWJncmliZHhxbmx0d3ltZnB4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUyNzY3MDMsImV4cCI6MjA3MDg1MjcwM30.hRNStseDQvH3p_mddNAIFrnXRTTW1wljY0GWMGdDNzI"
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+# ---------------- Database helpers ----------------
+def init_db():
+    """
+    Optional: check or create the user_books table in Supabase.
+    If table already exists, nothing happens.
+    """
+    # Example: check if table exists
+    try:
+        supabase.table("user_books").select("*").limit(1).execute()
+    except Exception as e:
+        print("Table may not exist. Create it in Supabase SQL editor if needed.")
+    # To create via Python, you can run SQL via Supabase dashboard instead
+
+def upsert_user_book(title, author, read=None, rating=None):
+    """
+    Inserts or updates a user's book entry.
+    """
+    now = datetime.utcnow().isoformat()
+    
+    # Check if book exists
+    existing = supabase.table("user_books").select("id").eq("title", title).eq("author", author).execute()
+    
+    data = {}
+    if read is not None:
+        data["read"] = bool(read)
+    if rating is not None:
+        data["rating"] = int(rating)
+    data["updated_at"] = now
+    
+    if existing.data and len(existing.data) > 0:
+        # Update existing row
+        supabase.table("user_books").update(data).eq("title", title).eq("author", author).execute()
     else:
-        cur.execute(
-            "INSERT INTO user_books (title, author, read, rating, updated_at) VALUES (?,?,?,?,?)",
-            (title, author, 1 if read else 0 if read is not None else 0, int(rating) if rating is not None and not pd.isna(rating) else None, now),
-        )
-    conn.commit()
+        # Insert new row
+        data.update({"title": title, "author": author})
+        supabase.table("user_books").insert(data).execute()
 
-def get_user_book(conn, title, author):
-    cur = conn.cursor()
-    cur.execute("SELECT read, rating FROM user_books WHERE title = ? AND (author = ? OR author IS NULL OR ? IS NULL)", (title, author, author))
-    r = cur.fetchone()
-    if r:
-        return {"read": bool(r[0]), "rating": int(r[1]) if r[1] is not None else None}
+def get_user_book(title, author):
+    """
+    Returns a dict with read status and rating for a specific book.
+    """
+    res = supabase.table("user_books").select("read,rating").eq("title", title).eq("author", author).execute()
+    if res.data and len(res.data) > 0:
+        r = res.data[0]
+        return {"read": bool(r.get("read", False)), "rating": int(r.get("rating")) if r.get("rating") is not None else None}
     return {"read": False, "rating": None}
 
-def get_all_user_books(conn):
-    df = pd.read_sql("SELECT * FROM user_books", conn)
-    return df
+def get_all_user_books():
+    """
+    Returns all user book entries as a Pandas DataFrame.
+    """
+    res = supabase.table("user_books").select("*").execute()
+    if res.data:
+        return pd.DataFrame(res.data)
+    # Return empty dataframe with expected columns if no data
+    return pd.DataFrame(columns=["id","title","author","read","rating","updated_at"])
 
 # ---------- APP UI ----------
 st.set_page_config(page_title="Book Accolades Library", layout="wide")
@@ -103,9 +166,10 @@ st.markdown(
 )
 
 # DB connection
-engine = create_engine(f"sqlite:///{DB_PATH}", connect_args={"check_same_thread": False})
-conn = engine.raw_connection()
-init_db(conn)
+# engine = create_engine(f"sqlite:///{DB_PATH}", connect_args={"check_same_thread": False})
+# conn = engine.raw_connection()
+# init_db(conn)
+init_db()
 
 # Load CSVs
 df_awards = pd.read_csv("Export/Awards_Lists_Clubs.csv")
@@ -348,12 +412,13 @@ elif choice == "Search Accolades":
 else:  # All Books view
     st.subheader("Your Read Books")
 
-    u = get_all_user_books(conn)
+    u = get_all_user_books()
     u_filtered = u[(u["read"] == True) | (u["rating"].notnull() & (u["rating"] > 0))]
     u_filtered = u_filtered.drop_duplicates(subset=["title"], keep="first")
 
     if u.empty:
         st.info("No books recorded yet.")
+        merged_ratings = pd.DataFrame(columns=["Title", "Author", "Your Rating", "average_rating"])
     else:
         tracked = u_filtered[["title", "author", "rating"]].rename(
             columns={"title": "Title", "author": "Author", "rating": "Your Rating"}
@@ -369,35 +434,33 @@ else:  # All Books view
             on=["Title", "Author"],
             how="left"
         )
-
         merged_ratings["Your Rating"] = merged_ratings["Your Rating"].astype(float)
 
-# Chart 1: Your rating vs Goodreads average
-    chart1 = (
-    alt.Chart(merged_ratings)
-    .mark_circle(size=80, color="#6A5ACD")  # slate blue points
-    .encode(
-        x=alt.X("average_rating", title="Goodreads Avg Rating",
-                scale=alt.Scale(domain=[0, 5], nice=False),
-                axis=alt.Axis(values=[i/2 for i in range(11)])),  # 0, 0.5, ..., 5
-        y=alt.Y("Your Rating", title="Your Rating",
-                scale=alt.Scale(domain=[0, 5], nice=False),
-                axis=alt.Axis(values=[i/2 for i in range(11)])),
-        tooltip=["Title", "Author", "Your Rating", "average_rating"]
-    )
-    .properties(
-        width=600,
-        height=400,
-        title="Your Ratings vs Goodreads Average"
-    )
-)
+    # Only draw the chart if merged_ratings has data
+    if not merged_ratings.empty:
+        chart1 = (
+            alt.Chart(merged_ratings)
+            .mark_circle(size=80, color="#6A5ACD")
+            .encode(
+                x=alt.X("average_rating", title="Goodreads Avg Rating",
+                        scale=alt.Scale(domain=[0, 5], nice=False),
+                        axis=alt.Axis(values=[i/2 for i in range(11)])),
+                y=alt.Y("Your Rating", title="Your Rating",
+                        scale=alt.Scale(domain=[0, 5], nice=False),
+                        axis=alt.Axis(values=[i/2 for i in range(11)])),
+                tooltip=["Title", "Author", "Your Rating", "average_rating"]
+            )
+            .properties(width=600, height=400, title="Your Ratings vs Goodreads Average")
+        )
 
-    # Add diagonal 1:1 line
-    line = (
-    alt.Chart(pd.DataFrame({"x": [0, 5], "y": [0, 5]}))
-    .mark_line(color="#8FBC8F", strokeDash=[5, 5], strokeWidth=0.5)  # dark sea green, thinner
-    .encode(x="x", y="y")
-)
+        # Add diagonal 1:1 line
+        line = (
+            alt.Chart(pd.DataFrame({"x": [0, 5], "y": [0, 5]}))
+            .mark_line(color="#8FBC8F", strokeDash=[5, 5], strokeWidth=0.5)
+            .encode(x="x", y="y")
+        )
+
+        st.altair_chart(chart1 + line)
 
     # ---------------- Chart 2: Accolades vs Goodreads avg rating ----------------
     # Filter out author-only awards (like Nobel) and prepare merge
@@ -471,7 +534,8 @@ if choice == "Your Books" and 'line' in locals():
 # Editable table for base_df (book list with accolades)
 # ---------- Editable table (Top by Accolades & Search Books only) ----------
 if choice in ["Top by Accolades", "Search Books"] and base_df is not None:
-    user_df = get_all_user_books(conn)
+    # user_df = get_all_user_books(conn)
+    user_df = get_all_user_books()
     if not user_df.empty:
         merged = base_df.merge(
             user_df[["title", "author", "read", "rating"]].rename(columns={"title": "Title", "author": "Author"}),
@@ -592,11 +656,12 @@ if choice in ["Top by Accolades", "Search Books"] and base_df is not None:
 
         if st.button("Save read/rating status"):
             for _, row in selected_df.iterrows():
-                upsert_user_book(conn, row["Title"], row["Author"], read=row["read"], rating=row["rating"])
+                # upsert_user_book(conn, row["Title"], row["Author"], read=row["read"], rating=row["rating"])
+                upsert_user_book(row["Title"], row["Author"], read=row["read"], rating=row["rating"])
             st.success("All statuses saved!")
         
 # Close DB connection when done
-conn.close()
+# conn.close()
 
 #Add time updated timestamp
 csv_path = "Export/books_with_ratings_and_info.csv"
