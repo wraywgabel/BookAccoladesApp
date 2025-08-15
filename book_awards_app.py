@@ -23,7 +23,11 @@ DB_PATH = "user_books.db"      # local sqlite file to persist read status & pers
 GOODREADS_SEARCH = "https://goodreads-unofficial.herokuapp.com/search?q={q}"
 GOODREADS_BOOK = "https://goodreads-unofficial.herokuapp.com/book/{book_id}"
 # Note: This is an unofficial endpoint useful for small/personal projects; may be rate-limited or go down.
-# Replace with your preferred 3rd-party API if needed.
+
+st.set_page_config(
+    page_title="Book Tracker",
+    page_icon="📚",  # stack of books emoji
+)
 
 # # ---------- DATABASE HELPERS (old)----------
 # def init_db(conn):
