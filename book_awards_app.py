@@ -442,16 +442,20 @@ else:  # All Books view
 
     # Only draw the chart if merged_ratings has data
     if not merged_ratings.empty:
+        # Add horizontal and vertical jitter
+        merged_ratings["x_jitter"] = merged_ratings["average_rating"] + np.random.uniform(-0.1, 0.1, size=len(merged_ratings))
+        merged_ratings["y_jitter"] = merged_ratings["Your Rating"] + np.random.uniform(-0.1, 0.1, size=len(merged_ratings))
+
         chart1 = (
             alt.Chart(merged_ratings)
-            .mark_circle(size=80, color="#6A5ACD")
+            .mark_circle(size=80, color="#6A5ACD", opacity=0.7)
             .encode(
-                x=alt.X("average_rating", title="Goodreads Avg Rating",
+                x=alt.X("x_jitter:Q", title="Goodreads Avg Rating",
                         scale=alt.Scale(domain=[0, 5], nice=False),
-                        axis=alt.Axis(values=[i/2 for i in range(11)])),
-                y=alt.Y("Your Rating", title="Your Rating",
+                        axis=alt.Axis(values=list(range(0,6)))),  # 1 rating interval
+                y=alt.Y("y_jitter:Q", title="Your Rating",
                         scale=alt.Scale(domain=[0, 5], nice=False),
-                        axis=alt.Axis(values=[i/2 for i in range(11)])),
+                        axis=alt.Axis(values=list(range(0,6)))),
                 tooltip=["Title", "Author", "Your Rating", "average_rating"]
             )
             .properties(width=600, height=400, title="Your Ratings vs Goodreads Average")
@@ -463,8 +467,6 @@ else:  # All Books view
             .mark_line(color="#8FBC8F", strokeDash=[5, 5], strokeWidth=0.5)
             .encode(x="x", y="y")
         )
-
-        st.altair_chart(chart1 + line)
 
     # ---------------- Chart 2: Accolades vs Goodreads avg rating ----------------
     # Filter out author-only awards (like Nobel) and prepare merge
@@ -604,6 +606,18 @@ if choice in ["Top by Accolades", "Search Books"] and base_df is not None:
         hide_index=True
     )
 
+    # --- Save button moved here, right under editable table ---
+    if st.button("Save read/rating status for all books"):
+        for _, row in selected_df.iterrows():
+            upsert_user_book(
+                row["Title"],
+                row["Author"],
+                read=row["read"],
+                rating=row["rating"]
+            )
+        st.success("All statuses saved!")
+
+    # Keep selection logic only for displaying details
     selected_books = selected_df[selected_df["Select"] == True]
 
     if selected_books.empty:
@@ -617,7 +631,7 @@ if choice in ["Top by Accolades", "Search Books"] and base_df is not None:
 
         # Author-only accolades (including Nobel prizes)
         author_only_accolades = df_awards[
-            (df_awards["Author"] == sel_author) &
+            (df_awards["Author"] == sel_author) & 
             ((df_awards["Title"].isna()) | (df_awards["Title"].str.strip() == "") |
              df_awards["Accolade"].str.contains("Nobel", case=False, na=False))
         ]
@@ -657,12 +671,6 @@ if choice in ["Top by Accolades", "Search Books"] and base_df is not None:
         st.markdown(f"- **Genres:** {genres}")
         st.write(description)
         st.markdown(f"- **Notes:** {notes}")
-
-        if st.button("Save read/rating status"):
-            for _, row in selected_df.iterrows():
-                # upsert_user_book(conn, row["Title"], row["Author"], read=row["read"], rating=row["rating"])
-                upsert_user_book(row["Title"], row["Author"], read=row["read"], rating=row["rating"])
-            st.success("All statuses saved!")
         
 # Close DB connection when done
 # conn.close()
